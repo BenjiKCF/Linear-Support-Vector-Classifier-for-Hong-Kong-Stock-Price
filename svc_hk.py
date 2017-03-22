@@ -1,7 +1,3 @@
-#  Included: HK Housing price, HK GDP, HK Inflation, HSI, HK Unemployment,
-#  Included: Chinese housing price, Chinese GDP, Chinese Inflation, CSI300,
-#  Included: sp500, US interest, USD:RMB
-#  Not include: chi-hk, Gold, Chinese Deposit, wage, Chinese interest
 import quandl
 import numpy as np
 import pandas as pd
@@ -10,6 +6,11 @@ import datetime
 import bs4 as bs
 from sklearn import svm, preprocessing, cross_validation
 from sklearn.linear_model import SGDClassifier
+from sklearn import kernel_approximation
+from sklearn.naive_bayes import GaussianNB
+import requests
+import pickle
+import os
 
 # HSI Volume, HSI
 # Sourced from: Yahoo
@@ -42,40 +43,77 @@ def create_labels(cur, fut):
     if fut > 0.03:  # if rise 3%
         profit_counter = profit_counter * (fut)
         return 1
-    elif fut < -0.03:
-        return -1
+    #elif fut < -0.03:
+    #    return -1
     else:
         return 0
     print profit_counter
 
-
-def process(stock):
+def predict(stock):
+    action_dict = {1:"Buy", -1:"Sell", 0:"Hold"}
     df = format_data(stock)
-    df[['HSI Volume', 'HSI', stock]] = df[['HSI Volume', 'HSI', stock]].pct_change()
+    df[stock+'_90ma'] = df[stock].rolling(window=90).mean()
+    df['HSI_90ma'] = df['HSI'].rolling(window=90).mean()
+    df = df.pct_change()
 
     # shift future value to current date
     df[stock+'_future'] = df[stock].shift(-1)
+
     df.replace([-np.inf, np.inf], np.nan, inplace=True)
     df.dropna(inplace=True)
     df['label'] = list(map(create_labels, df[stock], df[stock+'_future']))
+
     X = np.array(df.drop(['label', stock+'_future'], 1)) # 1 = column
     X = preprocessing.scale(X)
     y = np.array(df['label'])
 
     X_train, X_test, y_train, y_test = cross_validation.train_test_split(X, y, test_size=0.2)
 
-    clf = svm.LinearSVC()
+    if os.path.exists("my_dumped_classifier.pkl"):
+        with open('my_dumped_classifier.pkl', 'rb') as fid:
+            clf = pickle.load(fid)
+    else:
+        clf = svm.LinearSVC()
+
     clf.fit(X_train, y_train)
-    # print "Number of Data: ", len(df)
-    return clf.score(X_test, y_test)
 
-# print process("1217.HK")
+    with open('my_dumped_classifier.pkl', 'wb') as fid:
+        pickle.dump(clf, fid)
+    #current_hsi = hsi_data().tail(1)
+    #current_stock = custom_stock(stock).tail(1)
+    #df2 = current_hsi.join(current_stock)
+    accuracy = clf.score(X_test, y_test)
+    #prediction = clf.predict(df2)[0]
+    return accuracy #, prediction
+    #return "Accuracy for {}: {}%, Recommend action for {}: {}".format(stock, int(accuracy*100), stock, action_dict[prediction])
 
-def final(stock):
+# print predict("1217.HK")
+# print predict("8153.HK")
+
+def save_HSI_tickers():
+    resp = requests.get('http://www.aastocks.com/tc/stocks/market/index/hk-index-con.aspx')
+    soup = bs.BeautifulSoup(resp.text, "html5lib")
+    table = soup.find('table', {'class':'tblM s2'})
+    tickers = []
+    for row in table.findAll('tr')[1:]:
+        ticker = row.findAll('a')[0].text
+        tickers.append(str(ticker))
+
+    #with open("sp500tickers.pickle", "wb") as f:
+    #    pickle.dump(tickers, f)
+
+    # print tickers
+    return tickers
+
+# save_HSI_tickers()
+
+def test_all():
+    tickers = save_HSI_tickers()
     accuracies = []
-    for j in range(10):
-        number = process(stock)
-        accuracies.append(number)
-    print 'Mean Accuracy for 10 tests for ', stock, ' : ', sum(accuracies) / len(accuracies)
+    for count, ticker in enumerate(tickers):
+        accuracy = predict(ticker[1:])
+        print "Trained {} stock with accuracy {}".format(count+1, accuracy)
+        print "\n"
+    #print "Total accuracy: {}".format(sum(accuracies)/len(accuracies))
 
-final("1217.HK")
+test_all()
