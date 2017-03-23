@@ -1,5 +1,4 @@
-# Predicting HK Stock movement with Linear Support Vector Classifier
-
+# Linear-Support-Vector-Classifier for Hong-Kong-Stock-Price
 Using Linear Support Vector Classification to analyze individual stock from Hong Kong. 
 Data are downloaded from Yahoo Finance and Quandl. 
 Data are processed directly by sklearn- machine learning algorithm. 
